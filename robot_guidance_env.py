@@ -6,7 +6,7 @@ import math
 
 
 class RobotGuidanceEnv(gym.Env):
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
+    metadata = {"render_modes": ["human"], "render_fps": 4}
 
     def __init__(self, width, height, max_robot_vel, max_person_vel, preferred_following_distance, max_following_distance, start_state = None, goal_state = None, seed=1032, render_mode=None):
         np.random.seed(seed)
@@ -59,14 +59,11 @@ class RobotGuidanceEnv(gym.Env):
             print(f"Inside of max_following_distance, so person will try and follow.")
 
             # Calculate the desired movement to reach the preferred_following_distance
-            # delta_x = (desired_distance / distance_to_robot) * (self.robot_x - self.person_x)
-            # delta_y = (desired_distance / distance_to_robot) * (self.robot_y - self.person_y)
+            # Use trig because it's useful
             x = math.atan2(self.robot_y - self.person_y, self.robot_x - self.person_x)
             z = math.pi - math.pi/2.0 - x
             delta_x = (distance_to_robot-self.preferred_following_distance / math.sin(math.pi/2.0)) * math.sin(z)
             delta_y = (distance_to_robot-self.preferred_following_distance / math.sin(math.pi/2.0)) * math.sin(x)
-
-            print(x, z, delta_x, delta_y)
 
             # Clip the movement based on max_person_vel
             delta_x = np.clip(delta_x, -self.max_person_vel, self.max_person_vel)
