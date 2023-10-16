@@ -1,12 +1,16 @@
 import gym
 from gym.spaces import Box
 import numpy as np
+import pygame
 
 class RobotGuidanceEnv(gym.Env):
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, width, height, max_robot_vel, max_person_vel, preferred_following_distance, max_following_distance, start_state = None, goal_state = None, seed=1032):
+    def __init__(self, width, height, max_robot_vel, max_person_vel, preferred_following_distance, max_following_distance, start_state = None, goal_state = None, seed=1032, render_mode=None):
         np.random.seed(seed)
-
+        self.render_mode = render_mode
+        self.window = None
+        self.clock = None
         self.width = width
         self.height = height
         self.max_robot_vel = max_robot_vel
@@ -16,17 +20,30 @@ class RobotGuidanceEnv(gym.Env):
         self.start_state = start_state
         self.goal_state = goal_state
 
+        self.observation_space = Box(np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32), np.array([width, height, width, height], dtype=np.float32))
+        self.action_space = Box(low=-max_robot_vel, high=max_robot_vel, shape=(2,), dtype=np.float32)
+
+        if self.start_state is None:
+            self.start_state = self.observation_space.sample()
+        if self.goal_state is None:
+            self.goal_state = self.observation_space.sample()
+
         self.person_x, self.person_y, self.robot_x, self.robot_y = self.start_state
 
 
-        self.observation_space = Box(np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32), np.array([width, height, width, height], dtype=np.float32))
-        self.action_space = Box(low=-max_robot_vel, high=max_robot_vel, shape=(2,), dtype=np.float32)
+
+       # Initialize Pygame
+        if render_mode == "human":
+            pygame.init()
+            self.window = pygame.display.set_mode((500, 500))  # Fixed window size
+            pygame.display.set_caption("Robot Guidance Environment")
+            self.clock = pygame.time.Clock()
 
     def reset(self):
         self.person_x, self.person_y, self.robot_x, self.robot_y = self.start_state
         observation = np.array([self.person_x, self.person_y, self.robot_x, self.robot_y])
+        self.render()
         return np.array(observation, dtype=np.float32), {}
-
 
     def step(self, action):
         self.robot_x += action[0]
@@ -66,56 +83,61 @@ class RobotGuidanceEnv(gym.Env):
 
         observation = np.array([self.person_x, self.person_y, self.robot_x, self.robot_y], dtype=np.float32)
         print(observation)
+
+        self.render()
+
         return observation, reward, self.person_x == self.goal_state[0] and self.person_y == self.goal_state[1], False, {}
-
-
-""" 
-        self.state_space = Box(np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32), np.array([width, height, width, height], dtype=np.float32))
-        self.action_space = Box(-max_robot_vel, +max_robot_vel)
         
-        if start_state is None:
-            start_state = self.state_space.sample()
-        if goal_state is None:
-            goal_state = self.state_space.sample()
-        self.start_state = start_state
-        self.state = self.start_state
-        self.goal_state = goal_state
+    def render(self):
 
 
-        self.max_robot_vel = max_robot_vel
-        self.max_person_vel = max_person_vel
-        self.preferred_following_distance = preferred_following_distance
-        self.max_following_distance = max_following_distance
+        if self.render_mode == "human":
+            self.window.fill((255, 255, 255))  # Clear the window
+            # Draw the grid
 
-    def step(self, robot_vels):
-        state = self.state
-        state += np.array([0.0, 0.0, robot_vels[0], robot_vels[1]])
-        if not self.state_space.contains(state):
-            raise Exception("Velocity applied takes robot out of state space")
+            cell_width = int(self.window.get_width() / self.width)
+            cell_height = int(self.window.get_height() / self.height)
 
-        diff = state[2:] - state[:2]
+            for x in range(0, self.window.get_width(), cell_width):
+                for y in range(0, self.window.get_height(), cell_height):
+                    pygame.draw.rect(self.window, (0,0,0), (x, y, cell_width, cell_height), 1)
 
-        person_vel = np.array([0.0, 0.0])
-        
-        if np.any(np.abs(diff) < self.max_following_distance):
+            # Draw the goal state as a green circle
+            goal_x, goal_y = self.convert_coordinates(self.goal_state[:2])
+            pygame.draw.circle(self.window, (0, 255, 0), (int(goal_x), int(goal_y)), 10)
+
+            # Draw the human as a blue circle
+            human_x, human_y = self.convert_coordinates((self.person_x, self.person_y))
+            pygame.draw.circle(self.window, (0, 0, 255), (int(human_x), int(human_y)), 10)
+
+            # Draw the robot as a red circle
+            robot_x, robot_y = self.convert_coordinates((self.robot_x, self.robot_y))
+            pygame.draw.circle(self.window, (255, 0, 0), (int(robot_x), int(robot_y)), 10)
+
+            # Draw a line between the human and the robot
+            pygame.draw.line(self.window, (255, 0, 0), (int(human_x), int(human_y)), (int(robot_x), int(robot_y)))
+
+            # Calculate the midpoint of the line
+            midpoint_x = (human_x + robot_x) / 2
+            midpoint_y = (human_y + robot_y) / 2
+
+            # Calculate the distance between the human and the robot
+            distance = np.sqrt((self.person_x - self.robot_x) ** 2 + (self.person_y - self.robot_y) ** 2)
+            distance_text = f"Distance: {distance:.2f} m"
+
+            # Render the distance text on the screen with a smaller font
+            font = pygame.font.Font(None, 24)  # Use a smaller font size
+            text_surface = font.render(distance_text, True, (0, 0, 0))
+            text_rect = text_surface.get_rect(center=(midpoint_x, midpoint_y))
+            self.window.blit(text_surface, text_rect)
+
+            pygame.display.flip()
+            self.clock.tick(4)  # Control rendering FPS
 
 
-
-            req_vel = self.preferred_following_distance - diff
-            
-            if req_vel[0] > self.max_person_vel:
-                person_vel[0] = self.max_person_vel
-            else:
-                person_vel[0] = req_vel[0]
-
-            if req_vel[1] > self.max_person_vel:
-                person_vel[1] = self.max_person_vel
-            else:
-                person_vel[1] = req_vel[1]
-
-            state += np.array([person_vel[0], person_vel[1], 0.0, 0.0])
-
-        self.state = state
-
-        return self.state, -np.linalg.norm(self.state, self.goal_state), self.state == self.goal_state
-"""
+    def convert_coordinates(self, coordinates):
+        # Convert observation space coordinates to Pygame window space
+        x, y = coordinates
+        pygame_x = x * (self.window.get_width() / self.width)
+        pygame_y = y * (self.window.get_height() / self.height)
+        return pygame_x, pygame_y
