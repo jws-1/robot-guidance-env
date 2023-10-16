@@ -2,6 +2,8 @@ import gym
 from gym.spaces import Box
 import numpy as np
 import pygame
+import math
+
 
 class RobotGuidanceEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
@@ -30,12 +32,9 @@ class RobotGuidanceEnv(gym.Env):
 
         self.person_x, self.person_y, self.robot_x, self.robot_y = self.start_state
 
-
-
-       # Initialize Pygame
         if render_mode == "human":
             pygame.init()
-            self.window = pygame.display.set_mode((500, 500))  # Fixed window size
+            self.window = pygame.display.set_mode((500, 500))
             pygame.display.set_caption("Robot Guidance Environment")
             self.clock = pygame.time.Clock()
 
@@ -44,34 +43,39 @@ class RobotGuidanceEnv(gym.Env):
         observation = np.array([self.person_x, self.person_y, self.robot_x, self.robot_y])
         self.render()
         return np.array(observation, dtype=np.float32), {}
-
+    
     def step(self, action):
+        # Apply the robot's velocities based on the action
         self.robot_x += action[0]
         self.robot_y += action[1]
-        delta_x = self.robot_x - self.person_x
-        delta_y = self.robot_y - self.person_y
+        print(f"The robot moves by {action[0]}m {action[1]}m")
+        # Calculate the distance between the human and the robot
         distance_to_robot = np.sqrt((self.person_x - self.robot_x) ** 2 + (self.person_y - self.robot_y) ** 2)
         print(f"The robot is {distance_to_robot}m from the person")
-        print(f"Action: {action}")
 
-        if distance_to_robot <= self.max_following_distance:
-            print(f"Within max_following_distance, so person will try and follow. ({distance_to_robot} <= {self.max_following_distance})")
-            
-            desired_distance = self.preferred_following_distance
+        if distance_to_robot <= self.preferred_following_distance:
+            print(f"Within the preferred_following_distance, so the person does not move.")
+        elif distance_to_robot <= self.max_following_distance:
+            print(f"Inside of max_following_distance, so person will try and follow.")
 
-            if abs(distance_to_robot) >= self.preferred_following_distance:
-                print(f"Far enough away from the preferred_following_distance ({distance_to_robot} >= {self.preferred_following_distance})")
-                delta_x *= (desired_distance / distance_to_robot)
-                delta_y *= (desired_distance / distance_to_robot)
-                print(f"Desired move: {delta_x} {delta_y}")
-                delta_x = np.clip(delta_x, -self.max_person_vel, +self.max_person_vel)
-                delta_y = np.clip(delta_y, -self.max_person_vel, +self.max_person_vel)
+            # Calculate the desired movement to reach the preferred_following_distance
+            # delta_x = (desired_distance / distance_to_robot) * (self.robot_x - self.person_x)
+            # delta_y = (desired_distance / distance_to_robot) * (self.robot_y - self.person_y)
+            x = math.atan2(self.robot_y - self.person_y, self.robot_x - self.person_x)
+            z = math.pi - math.pi/2.0 - x
+            delta_x = (distance_to_robot-self.preferred_following_distance / math.sin(math.pi/2.0)) * math.sin(z)
+            delta_y = (distance_to_robot-self.preferred_following_distance / math.sin(math.pi/2.0)) * math.sin(x)
 
-                self.person_x += delta_x
-                self.person_y += delta_y
-                print(f"Person moves by {delta_x} {delta_y}")
-            else:
-                print(f"The person is already close to the robot, so not moving.")
+            print(x, z, delta_x, delta_y)
+
+            # Clip the movement based on max_person_vel
+            delta_x = np.clip(delta_x, -self.max_person_vel, self.max_person_vel)
+            delta_y = np.clip(delta_y, -self.max_person_vel, self.max_person_vel)
+
+            # Update the human's position
+            self.person_x += delta_x
+            self.person_y += delta_y
+            print(f"Person moves by {delta_x}m {delta_y}m, new distance is {np.sqrt((self.person_x - self.robot_x) ** 2 + (self.person_y - self.robot_y) ** 2)}")
 
         # Clip positions within the environment boundaries
         self.person_x = np.clip(self.person_x, 0, self.width)
@@ -79,6 +83,7 @@ class RobotGuidanceEnv(gym.Env):
         self.robot_x = np.clip(self.robot_x, 0, self.width)
         self.robot_y = np.clip(self.robot_y, 0, self.height)
 
+        # Calculate the reward based on the distance to the goal state
         reward = -abs(np.sqrt((self.person_x - self.goal_state[0]) ** 2 + (self.person_y - self.goal_state[1]) ** 2))
 
         observation = np.array([self.person_x, self.person_y, self.robot_x, self.robot_y], dtype=np.float32)
@@ -86,7 +91,12 @@ class RobotGuidanceEnv(gym.Env):
 
         self.render()
 
-        return observation, reward, self.person_x == self.goal_state[0] and self.person_y == self.goal_state[1], False, {}
+        # Check if the person has reached the goal state
+        done = (self.person_x == self.goal_state[0] and self.person_y == self.goal_state[1])
+
+        return observation, reward, done, False, {}
+
+
         
     def render(self):
 
