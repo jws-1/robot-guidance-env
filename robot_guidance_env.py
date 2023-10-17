@@ -6,7 +6,7 @@ import math
 
 
 class RobotGuidanceEnv(gym.Env):
-    metadata = {"render_modes": ["human"], "render_fps": 4}
+    metadata = {"render_modes": ["human"], "render_fps": 4, "scaling_factor" : 100.0, "draw_grid_lines" : False}
 
     def __init__(self, width, height, max_robot_vel, max_person_vel, preferred_following_distance, max_following_distance, start_state = None, goal_state = None, seed=1032, render_mode=None):
         np.random.seed(seed)
@@ -33,8 +33,14 @@ class RobotGuidanceEnv(gym.Env):
         self.person_x, self.person_y, self.robot_x, self.robot_y = self.start_state
 
         if render_mode == "human":
+
+            # Calculate the window size based on the scaling factor and the aspect ratio
+            scaling_factor = self.metadata["scaling_factor"]
+            window_width = int(width * scaling_factor)
+            window_height = int(height * scaling_factor)
+
             pygame.init()
-            self.window = pygame.display.set_mode((500, 500))
+            self.window = pygame.display.set_mode((window_width, window_height))
             pygame.display.set_caption("Robot Guidance Environment")
             self.clock = pygame.time.Clock()
 
@@ -97,17 +103,18 @@ class RobotGuidanceEnv(gym.Env):
         
     def render(self):
 
-
         if self.render_mode == "human":
             self.window.fill((255, 255, 255))  # Clear the window
-            # Draw the grid
+            
+            if self.metadata["draw_grid_lines"]:
+                # Draw the grid
 
-            cell_width = int(self.window.get_width() / self.width)
-            cell_height = int(self.window.get_height() / self.height)
+                cell_width = int(self.window.get_width() / self.width)
+                cell_height = int(self.window.get_height() / self.height)
 
-            for x in range(0, self.window.get_width(), cell_width):
-                for y in range(0, self.window.get_height(), cell_height):
-                    pygame.draw.rect(self.window, (0,0,0), (x, y, cell_width, cell_height), 1)
+                for x in range(0, self.window.get_width(), cell_width):
+                    for y in range(0, self.window.get_height(), cell_height):
+                        pygame.draw.rect(self.window, (0,0,0), (x, y, cell_width, cell_height), 1)
 
             # Draw the goal state as a green circle
             goal_x, goal_y = self.convert_coordinates(self.goal_state[:2])
